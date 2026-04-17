@@ -1,0 +1,5 @@
+Enhanced motion detected at 16:13:05 on 2026-04-17 (Frame: 843)
+Enhanced motion detected at 16:18:47 on 2026-04-17 (Frame: 643)
+Enhanced motion detected at 16:19:58 on 2026-04-17 (Frame: 1074)
+Enhanced motion detected at 16:22:36 on 2026-04-17 (Frame: 8)
+Enhanced motion detected at 16:24:46 on 2026-04-17 (Frame: 41)
