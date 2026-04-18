@@ -69,6 +69,12 @@ class Detector_2A2S:
         self.prev_frame = None
         self.reference_frame = None
         
+        # Cache for detections - used to draw boxes on skipped frames
+        self.last_detections = None
+        self.last_all_alerts = []
+        self.last_motion_contours = []
+        self.last_shadow_overlay = None  # Cache shadow overlay for consistent rendering
+        
         # Advanced Analytics Parameters - FIXED: All default to False
         self.shadow_detection_enabled = False
         self.abandoned_object_detection_enabled = False
@@ -239,16 +245,23 @@ class Detector_2A2S:
     
     def send_whatsapp_alert(self, alert_type, alert_data):
         """
-        ROBUST WhatsApp Alert System using pywhatkit
+        ROBUST WhatsApp Alert System - Enhanced for immediate sending
         Only triggers for: abandoned_object, fall_detection, shadow_detection
         """
         if not self.whatsapp_enabled:
+            print(f"[⚠️ WhatsApp disabled for {alert_type}]")
             return
             
         # Check if this alert type should trigger WhatsApp
         if not self.whatsapp_triggers.get(alert_type, False):
+            print(f"[⚠️ WhatsApp trigger disabled for {alert_type}]")
             return
-            
+        
+        # Run in background thread to not block detection
+        Thread(target=self._send_whatsapp_async, args=(alert_type, alert_data)).start()
+    
+    def _send_whatsapp_async(self, alert_type, alert_data):
+        """Send WhatsApp alert asynchronously with immediate scheduling"""
         try:
             with self.whatsapp_lock:  # Thread safety
                 current_time = datetime.now()
@@ -258,7 +271,7 @@ class Detector_2A2S:
                 if last_alert_key in self.last_whatsapp_alert:
                     time_diff = (current_time - self.last_whatsapp_alert[last_alert_key]).total_seconds()
                     if time_diff < self.whatsapp_cooldown:
-                        print(f"WhatsApp alert cooldown active for {alert_type}. Skipping...")
+                        print(f"[⏱️ {alert_type} cooldown: Next in {self.whatsapp_cooldown - time_diff:.0f}s]")
                         return
                 
                 # Update last alert time
@@ -267,58 +280,61 @@ class Detector_2A2S:
                 # Create robust alert message based on type
                 message = self._create_whatsapp_message(alert_type, alert_data, current_time)
                 
-                # Send WhatsApp message with error handling
-                print(f"🔔 Attempting to send WhatsApp alert for {alert_type}...")
+                print(f"\n🚨 [WHATSAPP: {alert_type.upper()}]")
+                print(f"📱 To: {self.whatsapp_number}")
+                print(f"📝 {message[:80]}...")
                 
-                # Get current time for immediate sending
-                now = datetime.now()
-                hour = now.hour
-                minute = now.minute + 1  # Send 1 minute from now
-                
-                # Handle minute overflow
-                if minute >= 60:
-                    minute = 0
-                    hour += 1
-                    if hour >= 24:
-                        hour = 0
-                
-                # Send WhatsApp message
-                pwk.sendwhatmsg(
-                    phone_no=self.whatsapp_number,
-                    message=message,
-                    time_hour=hour,
-                    time_min=minute,
-                    wait_time=15,  # Wait 15 seconds for WhatsApp to load
-                    tab_close=True,  # Auto close tab after sending
-                    close_time=3  # Close after 3 seconds
-                )
-                
-                print(f"✅ WhatsApp alert sent successfully for {alert_type}")
-                
-                # Log WhatsApp alert
-                whatsapp_log = {
-                    'timestamp': current_time.isoformat(),
-                    'type': f'{alert_type}_whatsapp',
-                    'phone_number': self.whatsapp_number,
-                    'message': message,
-                    'status': 'sent'
-                }
-                self.log_analytics_event('whatsapp_alerts', whatsapp_log)
-                
+                # Try immediate sending with pywhatkit
+                try:
+                    # Get current time for scheduling (1 minute from now)
+                    now = datetime.now()
+                    hour = now.hour
+                    minute = now.minute + 1
+                    
+                    # Handle minute overflow
+                    if minute >= 60:
+                        minute = 0
+                        hour += 1
+                        if hour >= 24:
+                            hour = 0
+                    
+                    print(f"[📤 Scheduling for {hour:02d}:{minute:02d}]")
+                    
+                    # Send WhatsApp message
+                    pwk.sendwhatmsg(
+                        phone_no=self.whatsapp_number,
+                        message=message,
+                        time_hour=hour,
+                        time_min=minute,
+                        wait_time=10,
+                        tab_close=True,
+                        close_time=1
+                    )
+                    
+                    print(f"✅ [WhatsApp {alert_type} scheduled]\n")
+                    
+                    # Log WhatsApp alert
+                    whatsapp_log = {
+                        'timestamp': current_time.isoformat(),
+                        'type': f'{alert_type}_whatsapp',
+                        'status': 'scheduled'
+                    }
+                    self.log_analytics_event('whatsapp_alerts', whatsapp_log)
+                    
+                except Exception as pywhatkit_error:
+                    print(f"❌ [WhatsApp error: {str(pywhatkit_error)[:60]}]")
+                    print(f"💡 [Need: Browser open + WhatsApp Web + Country code]\n")
+                    
+                    # Log failed attempt
+                    error_log = {
+                        'timestamp': current_time.isoformat(),
+                        'type': f'{alert_type}_whatsapp_error',
+                        'error': str(pywhatkit_error)[:60]
+                    }
+                    self.log_analytics_event('whatsapp_alerts', error_log)
+                    
         except Exception as e:
-            print(f"❌ Error sending WhatsApp alert for {alert_type}: {e}")
-            # Log failed WhatsApp attempt
-            try:
-                error_log = {
-                    'timestamp': datetime.now().isoformat(),
-                    'type': f'{alert_type}_whatsapp_failed',
-                    'phone_number': self.whatsapp_number,
-                    'error': str(e),
-                    'status': 'failed'
-                }
-                self.log_analytics_event('whatsapp_alerts', error_log)
-            except:
-                pass  # Don't let logging errors break the system
+            print(f"❌ [WhatsApp exception: {str(e)[:60]}]\n")
 
     def _create_whatsapp_message(self, alert_type, alert_data, timestamp):
         """
@@ -487,9 +503,10 @@ Data: {str(alert_data)[:100]}...
                     }
                 }
                 self.log_analytics_event('shadow_detections', shadow_event)
-                # Send WhatsApp alert for significant shadow detection - NEW ADDITION
-            if self.isSendingAlerts and shadow_pixels > 1000:  # Only for significant shadows
-                self.send_whatsapp_alert('shadow_detection', shadow_event)
+                # Send WhatsApp alert for significant shadow detection immediately
+                if shadow_pixels > 1000:  # Only for significant shadows
+                    print(f"🌒 [SHADOW DETECTED] Sending WhatsApp alert immediately...")
+                    self.send_whatsapp_alert('shadow_detection', shadow_event)
             return shadow_mask.astype(np.uint8) * 255, light_change_detected
             
         except Exception as e:
@@ -570,14 +587,11 @@ Data: {str(alert_data)[:100]}...
                                     if (current_time - v['last_seen']).total_seconds() < 60}
             
             # Log abandoned object alerts
-            # Log abandoned object alerts
             for alert in abandoned_alerts:
                 self.log_analytics_event('abandoned_objects', alert)
-                if self.isSendingAlerts:
-                    # Send email alert
-                    self.send_alert('abandoned_object', alert)
-                    # Send WhatsApp alert - NEW ADDITION
-                    self.send_whatsapp_alert('abandoned_object', alert)
+                # Send WhatsApp alert IMMEDIATELY for abandoned objects
+                print(f"📦 [ABANDONED OBJECT DETECTED] Sending WhatsApp alert immediately...")
+                self.send_whatsapp_alert('abandoned_object', alert)
                     
         except Exception as e:
             print(f"Error in abandoned object detection: {e}")
@@ -850,12 +864,11 @@ Data: {str(alert_data)[:100]}...
                                    if (current_time - v['timestamp']).total_seconds() < 30}
             
             # Log fall alerts
-            # Log fall alerts
             for alert in fall_alerts:
                 self.log_analytics_event('fall_detections', alert)
-                if self.isSendingAlerts:
-                    # Send WhatsApp alert - NEW ADDITION
-                    self.send_whatsapp_alert('fall_detection', alert)
+                # Send WhatsApp alert IMMEDIATELY for fall detection (highest priority)
+                print(f"🚨 [FALL DETECTED] Sending WhatsApp alert immediately...")
+                self.send_whatsapp_alert('fall_detection', alert)
                     
         except Exception as e:
             print(f"Error in fall detection: {e}")
@@ -1028,13 +1041,19 @@ Data: {str(alert_data)[:100]}...
         print("Detection stopped")
 
     def motion_object_scanner(self):
-        """FIXED: Main detection loop with robust error handling"""
+        """FIXED: Main detection loop with frame skipping for processing but persistent overlays"""
         
         frame_buffer = deque(maxlen=3)
+        frame_skip_counter = 0
+        frame_skip_rate = 3  # Process every 3rd frame to reduce CPU load
+        last_motion_detected = False
+        last_objects_detected = []
+        last_alerts = []
         
         while self.running:
             try:
                 self.frame_count += 1
+                frame_skip_counter += 1
                 
                 # Check current time to send alerts or not
                 self.isSendingAlerts = self.check_isSendingAlerts()
@@ -1054,51 +1073,68 @@ Data: {str(alert_data)[:100]}...
                 frame = cv2.resize(frame, (640, 480))
                 frame_buffer.append(frame.copy())
                 
-                # Convert frame to grayscale
-                frame_gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
-
-                # Initialize reference frame for shadow detection
-                if self.reference_frame is None:
-                    self.reference_frame = frame.copy()
-
-                # Shadow detection
-                shadow_mask = None
-                light_change_detected = False
-                if len(frame_buffer) >= 2:
-                    shadow_mask, light_change_detected = self.detect_shadows_and_light_changes(
-                        frame, frame_buffer[-2]
-                    )
-
-                # Initialize frame difference
-                if self.prev_frame is not None:
-                    frame_diff = cv2.absdiff(self.prev_frame, frame_gray)
-                else:
-                    frame_diff = np.zeros_like(frame_gray)
-                
-                self.prev_frame = frame_gray.copy()
-
-                # Background subtraction
-                foreground = self.bg_subtract.apply(frame_gray)
-
-                # Combine bg subtraction with frame diff
-                combined_frame = cv2.bitwise_and(frame_diff, foreground)
-                _, combined_frame = cv2.threshold(combined_frame, self.frame_diff_threshold, 255, cv2.THRESH_BINARY)
-
-                # Find contours for motion detection
-                contours_array, _ = cv2.findContours(combined_frame, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
-
-                # Reset detection flags
+                # Track motion and objects for display
                 motion_detected = False
                 objects_detected = []
                 all_alerts = []
+                light_change_detected = False
+                shadow_mask = None
+                
+                # OPTIMIZATION: Skip intensive processing on some frames
+                skip_heavy_processing = (frame_skip_counter % frame_skip_rate != 0)
+                
+                if not skip_heavy_processing:
+                    # Only run heavy processing on selected frames
+                    # Convert frame to grayscale
+                    frame_gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
 
-                # OBJECT DETECTION AND ADVANCED ANALYTICS
+                    # Initialize reference frame for shadow detection
+                    if self.reference_frame is None:
+                        self.reference_frame = frame.copy()
+
+                    # Shadow detection (skip on lighter frames)
+                    if self.shadow_detection_enabled and len(frame_buffer) >= 2:
+                        shadow_mask, light_change_detected = self.detect_shadows_and_light_changes(
+                            frame, frame_buffer[-2]
+                        )
+                        
+                        # Cache the shadow overlay for consistent rendering on all frames
+                        if shadow_mask is not None and np.any(shadow_mask):
+                            shadow_overlay = cv2.applyColorMap(shadow_mask, cv2.COLORMAP_COOL)
+                            self.last_shadow_overlay = shadow_overlay
+                        else:
+                            self.last_shadow_overlay = None
+                    else:
+                        self.last_shadow_overlay = None
+
+                    # Initialize frame difference
+                    if self.prev_frame is not None:
+                        frame_diff = cv2.absdiff(self.prev_frame, frame_gray)
+                    else:
+                        frame_diff = np.zeros_like(frame_gray)
+                    
+                    self.prev_frame = frame_gray.copy()
+
+                    # Background subtraction
+                    foreground = self.bg_subtract.apply(frame_gray)
+
+                    # Combine bg subtraction with frame diff
+                    combined_frame = cv2.bitwise_and(frame_diff, foreground)
+                    _, combined_frame = cv2.threshold(combined_frame, self.frame_diff_threshold, 255, cv2.THRESH_BINARY)
+
+                    # Find contours for motion detection
+                    contours_array, _ = cv2.findContours(combined_frame, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+                else:
+                    # On skipped frames, initialize empty contours
+                    contours_array = []
+
+                # ALWAYS DRAW STATUS TEXT EVERY FRAME - NO SKIPPING
                 if self.objectDetectionIsON and self.model is not None:
                     # Check scan duration
                     scan_obj_elapsed_time = datetime.now() - self.obj_scan_time_start
                     remaining_time = max(self.obj_scan_duration - scan_obj_elapsed_time.total_seconds(), 0)
                     
-                    # Show enabled analytics in the frame
+                    # Show enabled analytics in the frame - ALWAYS DRAW THIS TEXT
                     enabled_analytics = []
                     if self.shadow_detection_enabled:
                         enabled_analytics.append("Shadow")
@@ -1121,96 +1157,113 @@ Data: {str(alert_data)[:100]}...
                         self.objectDetectionIsON = False
                         print("Switching to MOTION detection")
                     
-                    try:
-                        # Run YOLO detection
-                        results = self.model(frame, verbose=False, conf=0.3)[0]
-                        detections = sv.Detections.from_ultralytics(results)
+                    # ONLY RUN EXPENSIVE YOLO DETECTION ON NON-SKIPPED FRAMES
+                    if not skip_heavy_processing:
+                        try:
+                            # Run YOLO detection
+                            results = self.model(frame, verbose=False, conf=0.3)[0]
+                            detections = sv.Detections.from_ultralytics(results)
+                            self.last_detections = detections  # Cache detections
 
-                        if len(detections.class_id) > 0:
-                            objects_detected = [self.object_classes_id.get(i, f"Unknown_{i}") for i in detections.class_id]
-                            
-                            # Log object detection event
-                            object_event = {
-                                'timestamp': datetime.now().isoformat(),
-                                'type': 'object_detections',
-                                'data': {
-                                    'objects': objects_detected,
-                                    'count': len(objects_detected),
-                                    'frame_count': self.frame_count
+                            if len(detections.class_id) > 0:
+                                objects_detected = [self.object_classes_id.get(i, f"Unknown_{i}") for i in detections.class_id]
+                                
+                                # Log object detection event
+                                object_event = {
+                                    'timestamp': datetime.now().isoformat(),
+                                    'type': 'object_detections',
+                                    'data': {
+                                        'objects': objects_detected,
+                                        'count': len(objects_detected),
+                                        'frame_count': self.frame_count
+                                    }
                                 }
-                            }
-                            self.log_analytics_event('object_detections', object_event)
+                                self.log_analytics_event('object_detections', object_event)
+                                
+                                # ADVANCED ANALYTICS
+                                if self.abandoned_object_detection_enabled:
+                                    abandoned_alerts = self.detect_abandoned_objects(detections, frame)
+                                    all_alerts.extend(abandoned_alerts)
+                                
+                                if self.loitering_detection_enabled:
+                                    loitering_alerts = self.detect_loitering(detections, frame)
+                                    all_alerts.extend(loitering_alerts)
+                                
+                                if self.suspicious_object_detection_enabled:
+                                    suspicious_alerts = self.detect_suspicious_objects(detections, frame)
+                                    all_alerts.extend(suspicious_alerts)
+                                
+                                if self.fall_detection_enabled:
+                                    fall_alerts = self.detect_falls(detections, frame)
+                                    all_alerts.extend(fall_alerts)
+                                
+                                # Log object detection
+                                self.write_object_logs(frame, objects_detected)
                             
-                            # ADVANCED ANALYTICS
-                            if self.abandoned_object_detection_enabled:
-                                abandoned_alerts = self.detect_abandoned_objects(detections, frame)
-                                all_alerts.extend(abandoned_alerts)
+                            # Cache alerts for skipped frames
+                            self.last_all_alerts = all_alerts
                             
-                            if self.loitering_detection_enabled:
-                                loitering_alerts = self.detect_loitering(detections, frame)
-                                all_alerts.extend(loitering_alerts)
+                            # Draw advanced analytics overlays
+                            self.draw_advanced_analytics_overlay(frame, all_alerts, shadow_mask)
                             
-                            if self.suspicious_object_detection_enabled:
-                                suspicious_alerts = self.detect_suspicious_objects(detections, frame)
-                                all_alerts.extend(suspicious_alerts)
-                            
-                            if self.fall_detection_enabled:
-                                fall_alerts = self.detect_falls(detections, frame)
-                                all_alerts.extend(fall_alerts)
-                            
-                            # Log object detection
-                            self.write_object_logs(frame, objects_detected)
+                        except Exception as e:
+                            print(f"Error in object detection: {e}")
+                            cv2.putText(frame, "[Object Detection Error]", 
+                                      (5, 80), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 0, 255), 2)
+                    
+                    # DRAW BOUNDING BOXES EVERY FRAME - using cached detections on skipped frames
+                    if self.last_detections is not None and len(self.last_detections.class_id) > 0:
+                        frame = self.boxAnnotator.annotate(
+                            scene=frame,
+                            detections=self.last_detections
+                        )
 
-                        # Draw bounding boxes with labels
-                        if len(detections.class_id) > 0:
-                            labels = []
-                            for i, class_id in enumerate(detections.class_id):
-                                confidence = detections.confidence[i] if hasattr(detections, 'confidence') else 0.0
-                                class_name = self.object_classes_id.get(class_id, 'Unknown')
-                                labels.append(f"{class_name} ({confidence:.2f})")
-                            
-                            frame = self.boxAnnotator.annotate(
-                                scene=frame,
-                                detections=detections
-                            )
-                        
-                        # Draw advanced analytics overlays
-                        self.draw_advanced_analytics_overlay(frame, all_alerts, shadow_mask)
-                        
-                    except Exception as e:
-                        print(f"Error in object detection: {e}")
-                        cv2.putText(frame, "[Object Detection Error]", 
-                                  (5, 80), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 0, 255), 2)
-
-                # MOTION DETECTION
-                else:
+                # MOTION DETECTION - ALWAYS SHOW TEXT
+                elif not self.objectDetectionIsON:
                     cv2.putText(frame, "[Enhanced Motion Scanning]", 
                               (5, 30), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 255, 0), 2)
 
-                    for c in contours_array:
-                        size = cv2.contourArea(c)
-                        if size >= self.min_contour_size:
-                            motion_detected = True
-                            (x, y, w, h) = cv2.boundingRect(c)                    
-                            cv2.rectangle(frame, (x, y), (x + w, y + h), (0, 255, 0), 2)
-                            cv2.putText(frame, f"Motion: {int(size)}", (x, y-10), 
-                                      cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 255, 0), 1)
+                    # Only process contours on non-skipped frames
+                    if not skip_heavy_processing:
+                        motion_detected_current = False
+                        self.last_motion_contours = []  # Reset cached contours
+                        
+                        for c in contours_array:
+                            size = cv2.contourArea(c)
+                            if size >= self.min_contour_size:
+                                motion_detected_current = True
+                                self.last_motion_contours.append((c, size))
+                                (x, y, w, h) = cv2.boundingRect(c)                    
+                                cv2.rectangle(frame, (x, y), (x + w, y + h), (0, 255, 0), 2)
+                                cv2.putText(frame, f"Motion: {int(size)}", (x, y-10), 
+                                          cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 255, 0), 1)
 
-                    if motion_detected:
+                        if motion_detected_current:
+                            cv2.putText(frame, "[!] Motion Detected", 
+                                      (5, 65), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 0, 255), 2)
+                            
+                            # Log motion event
+                            motion_event = {
+                                'timestamp': datetime.now().isoformat(),
+                                'type': 'motion_events',
+                                'data': {
+                                    'contours_count': len(self.last_motion_contours),
+                                    'largest_contour_size': max([size for _, size in self.last_motion_contours], default=0),
+                                    'frame_count': self.frame_count
+                                }
+                            }
+                            self.log_analytics_event('motion_events', motion_event)
+                    
+                    # DRAW MOTION BOXES EVERY FRAME - using cached contours on skipped frames
+                    for c, size in self.last_motion_contours:
+                        (x, y, w, h) = cv2.boundingRect(c)                    
+                        cv2.rectangle(frame, (x, y), (x + w, y + h), (0, 255, 0), 2)
+                        cv2.putText(frame, f"Motion: {int(size)}", (x, y-10), 
+                                  cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 255, 0), 1)
+                    
+                    if self.last_motion_contours:
                         cv2.putText(frame, "[!] Motion Detected", 
                                   (5, 65), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 0, 255), 2)
-                        
-                        # Log motion event
-                        motion_event = {
-                            'timestamp': datetime.now().isoformat(),
-                            'type': 'motion_events',
-                            'data': {
-                                'contours_count': len([c for c in contours_array if cv2.contourArea(c) >= self.min_contour_size]),
-                                'largest_contour_size': max([cv2.contourArea(c) for c in contours_array], default=0),
-                                'frame_count': self.frame_count
-                            }
-                        }
-                        self.log_analytics_event('motion_events', motion_event)
                         
                         # Write motion logs
                         self.write_motion_logs(frame)
@@ -1225,20 +1278,19 @@ Data: {str(alert_data)[:100]}...
                             if self.isSendingAlerts:
                                 try:
                                     alert_data = {
-                                        'contours_detected': len(contours_array),
+                                        'contours_detected': len(self.last_motion_contours),
                                         'timestamp': datetime.now().isoformat()
                                     }
                                     self.send_alert("motion", alert_data)
                                 except Exception as e:
                                     print(f"Error sending motion alert: {e}")
 
-                # Add enhanced information overlay
+                # APPLY CACHED SHADOW OVERLAY EVERY FRAME - prevents blinking
+                if self.last_shadow_overlay is not None and self.shadow_detection_enabled:
+                    frame = cv2.addWeighted(frame, 0.8, self.last_shadow_overlay, 0.2, 0)
+                
+                # Add enhanced information overlay - ALWAYS CALLED
                 self.add_enhanced_info_overlay(frame, motion_detected, objects_detected, all_alerts, light_change_detected)
-
-                # Draw shadow overlay if available
-                if shadow_mask is not None and self.shadow_detection_enabled and np.any(shadow_mask):
-                    shadow_overlay = cv2.applyColorMap(shadow_mask, cv2.COLORMAP_COOL)
-                    frame = cv2.addWeighted(frame, 0.8, shadow_overlay, 0.2, 0)
 
                 # Export frame for web interface
                 with self._frame_lock:

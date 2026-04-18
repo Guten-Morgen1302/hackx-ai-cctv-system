@@ -68,58 +68,68 @@ def dashboard():
 
 @app.route('/video_feed')
 def video_feed():
-    """Enhanced video stream with advanced analytics overlay"""
+    """Optimized video stream with frame skipping to prevent lag"""
     def generate_frames():
         global detector
+        frame_skip_counter = 0
+        frame_skip_rate = 2  # Skip every 2nd frame for better performance
+        last_frame = None
         
         while True:
-            if detector and detector.export_frame is not None:
-                try:
+            try:
+                if detector and detector.export_frame is not None:
+                    frame_skip_counter += 1
+                    
+                    # Skip frames to reduce CPU load
+                    if frame_skip_counter % frame_skip_rate != 0:
+                        if last_frame is not None:
+                            # Reuse last frame to maintain stream continuity
+                            yield (b'--frame\r\n'
+                                   b'Content-Type: image/jpeg\r\n\r\n' + last_frame + b'\r\n')
+                        time.sleep(0.01)
+                        continue
+                    
                     frame = detector.get_export_frame()
                     if frame is not None:
-                        # Enhance frame quality for web streaming
+                        # Reduce quality significantly to prevent lag
                         ret, buffer = cv2.imencode('.jpg', frame, [
-                            cv2.IMWRITE_JPEG_QUALITY, 85,
+                            cv2.IMWRITE_JPEG_QUALITY, 50,  # Reduced from 85
                             cv2.IMWRITE_JPEG_OPTIMIZE, 1
                         ])
                         if ret:
-                            frame_bytes = buffer.tobytes()
+                            last_frame = buffer.tobytes()
                             yield (b'--frame\r\n'
-                                   b'Content-Type: image/jpeg\r\n\r\n' + frame_bytes + b'\r\n')
+                                   b'Content-Type: image/jpeg\r\n\r\n' + last_frame + b'\r\n')
                         else:
-                            # Send error frame
-                            error_frame = create_error_frame("Frame Encoding Error")
+                            # Send basic error frame
+                            error_frame = np.zeros((240, 320, 3), dtype=np.uint8)
                             ret, buffer = cv2.imencode('.jpg', error_frame)
                             if ret:
-                                frame_bytes = buffer.tobytes()
+                                last_frame = buffer.tobytes()
                                 yield (b'--frame\r\n'
-                                       b'Content-Type: image/jpeg\r\n\r\n' + frame_bytes + b'\r\n')
+                                       b'Content-Type: image/jpeg\r\n\r\n' + last_frame + b'\r\n')
                     else:
                         # Send loading frame
-                        loading_frame = create_loading_frame()
-                        ret, buffer = cv2.imencode('.jpg', loading_frame)
+                        init_frame = np.zeros((240, 320, 3), dtype=np.uint8)
+                        ret, buffer = cv2.imencode('.jpg', init_frame)
                         if ret:
-                            frame_bytes = buffer.tobytes()
+                            last_frame = buffer.tobytes()
                             yield (b'--frame\r\n'
-                                   b'Content-Type: image/jpeg\r\n\r\n' + frame_bytes + b'\r\n')
-                except Exception as e:
-                    print(f"Error generating frame: {e}")
-                    error_frame = create_error_frame(f"Stream Error: {str(e)[:30]}")
-                    ret, buffer = cv2.imencode('.jpg', error_frame)
+                                   b'Content-Type: image/jpeg\r\n\r\n' + last_frame + b'\r\n')
+                else:
+                    # Send init frame
+                    init_frame = np.zeros((240, 320, 3), dtype=np.uint8)
+                    ret, buffer = cv2.imencode('.jpg', init_frame)
                     if ret:
-                        frame_bytes = buffer.tobytes()
+                        last_frame = buffer.tobytes()
                         yield (b'--frame\r\n'
-                               b'Content-Type: image/jpeg\r\n\r\n' + frame_bytes + b'\r\n')
-            else:
-                # Send initialization message
-                init_frame = create_initialization_frame()
-                ret, buffer = cv2.imencode('.jpg', init_frame)
-                if ret:
-                    frame_bytes = buffer.tobytes()
-                    yield (b'--frame\r\n'
-                           b'Content-Type: image/jpeg\r\n\r\n' + frame_bytes + b'\r\n')
-            
-            time.sleep(0.033)  # ~30 FPS
+                               b'Content-Type: image/jpeg\r\n\r\n' + last_frame + b'\r\n')
+                
+                time.sleep(0.02)  # Reduced from 0.033
+            except Exception as e:
+                print(f"Frame generation error: {e}")
+                time.sleep(0.1)
+                continue
     
     return Response(generate_frames(), mimetype='multipart/x-mixed-replace; boundary=frame')
 

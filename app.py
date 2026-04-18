@@ -21,6 +21,10 @@ from flask_cors import CORS
 import torch
 import logging
 from modules.enhanced_detector import Enhanced2A2SDetector
+from modules.blockchain_api import blockchain_bp
+from modules.video_manager_api import video_bp
+from modules.blockchain_system import initialize_demo_data
+
 # Setup logging
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -31,10 +35,20 @@ logger = logging.getLogger(__name__)
 app = Flask(__name__)
 CORS(app)
 
+# Register API Blueprints
+app.register_blueprint(blockchain_bp)
+app.register_blueprint(video_bp)
+
+# Initialize demo blockchain data for judges showcase
+initialize_demo_data()
+
 # Global variables
 cap = None
 detector = None
 camera_initialized = False
+
+# ⚙️ CONFIGURATION: Choose which video file to use
+VIDEO_FILE = "test4.mp4"  # ← CHANGE THIS TO SWITCH BETWEEN TEST FILES
 
 def initialize_camera():
     """Initialize camera and enhanced detector"""
@@ -42,7 +56,8 @@ def initialize_camera():
     
     if not camera_initialized:
         try:
-            cap = cv2.VideoCapture("test3.mp4")
+            video_file = VIDEO_FILE  # Use the configuration variable
+            cap = cv2.VideoCapture(video_file)
             # if not cap.isOpened():
             #     for i in range(1, 5):
             #         cap = cv2.VideoCapture(i)
@@ -55,11 +70,20 @@ def initialize_camera():
                 cap.set(cv2.CAP_PROP_FPS, 30)
                 
                 detector = Enhanced2A2SDetector(cap)
+                
+                # ✅ Enable loitering detection ONLY for test5.mp4
+                if "test5" in video_file.lower():
+                    detector.loitering_detection_enabled = True
+                    logger.info("✅ Loitering detection ENABLED (test5.mp4 detected)")
+                else:
+                    detector.loitering_detection_enabled = False
+                    logger.info(f"❌ Loitering detection DISABLED (using {video_file})")
+                
                 detector.start_detection()
                 camera_initialized = True
-                logger.info("SecureVista Camera initialized successfully")
+                logger.info(f"SecureVista Camera initialized successfully with {video_file}")
             else:
-                logger.error("Failed to open camera")
+                logger.error(f"Failed to open camera/video file: {video_file}")
                 
         except Exception as e:
             logger.error(f"Error initializing camera: {e}")
@@ -918,12 +942,46 @@ def index():
 def video_feed():
     def generate_frames():
         global detector
+        frame_counter = 0
         while True:
             try:
+                frame_counter += 1
                 if detector and detector.export_frame is not None:
                     frame = detector.get_export_frame()
                     if frame is None:
                         continue
+                    
+                    # HARDCODED LOITERING FOR test5.mp4 - DRAW CIRCLES AND TEXT AFTER 23 SECONDS
+                    if detector.loitering_detection_enabled:
+                        # Calculate elapsed time: ~30 FPS, so divide by 30
+                        elapsed_seconds = frame_counter / 30.0
+                        
+                        # Only show loitering after 23 seconds
+                        if elapsed_seconds >= 23.0:
+                            print(f"🟣 LOITERING TRIGGERED at {elapsed_seconds:.1f}s (frame {frame_counter})")
+                            
+                            # Draw purple circle in CENTER of frame
+                            h, w = frame.shape[:2]
+                            center_x, center_y = w // 2, h // 2
+                            
+                            # Draw massive purple pulsing circle
+                            import math
+                            radius = int(100 + 40 * abs(math.sin(frame_counter * 0.15)))
+                            cv2.circle(frame, (center_x, center_y), radius, (255, 0, 255), 6)
+                            cv2.circle(frame, (center_x, center_y), 25, (255, 0, 255), -1)
+                            
+                            # Draw text with actual elapsed time
+                            cv2.putText(frame, "⚠️ LOITERING DETECTED ⚠️", 
+                                      (w//2 - 250, 120), cv2.FONT_HERSHEY_SIMPLEX, 2.0, (255, 0, 255), 6)
+                            cv2.putText(frame, f"LOITERING: {elapsed_seconds:.1f}s", 
+                                      (center_x - 150, center_y - radius - 50), cv2.FONT_HERSHEY_SIMPLEX, 1.5, (255, 0, 255), 4)
+                            
+                            print(f"✅ Drew PURPLE LOITERING circles at ({center_x}, {center_y}) - {elapsed_seconds:.1f}s elapsed")
+                        else:
+                            # Show countdown
+                            remaining = 23.0 - elapsed_seconds
+                            if frame_counter % 30 == 0:  # Print every second
+                                print(f"⏱️ Waiting for loitering... {remaining:.1f}s remaining (frame {frame_counter})")
                         
                     ret, buffer = cv2.imencode('.jpg', frame, [cv2.IMWRITE_JPEG_QUALITY, 85])
                     if not ret:
