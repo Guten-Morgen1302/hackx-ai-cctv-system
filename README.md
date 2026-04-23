@@ -140,7 +140,6 @@ All modules run in microservices communicating via REST and WebSocket for lightn
 ## 📂 Project Info Deck
 
 <div align="center">
-  <a href="https://drive.google.com/file/d/1DICn8JUTFaYQgDGBZCSn3C9VwlGUvkdT/view?usp=sharing" target="_blank">
     <img src="https://img.shields.io/badge/📄-Project_Info_Deck-blue?style=for-the-badge&logo=google-drive&logoColor=white">
   </a>
 </div>
