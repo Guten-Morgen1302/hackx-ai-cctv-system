@@ -16,6 +16,11 @@ import time
 import json
 import os
 from datetime import datetime, timedelta
+from dotenv import load_dotenv
+
+# Load environment variables early
+load_dotenv()
+
 from flask import Flask, Response, jsonify, request, render_template_string
 from flask_cors import CORS
 import torch
@@ -23,6 +28,7 @@ import logging
 from modules.enhanced_detector import Enhanced2A2SDetector
 from modules.blockchain_api import blockchain_bp
 from modules.video_manager_api import video_bp
+from modules.voice_sentinel_api import voice_sentinel_bp
 from modules.blockchain_system import initialize_demo_data
 
 # Setup logging
@@ -38,6 +44,7 @@ CORS(app)
 # Register API Blueprints
 app.register_blueprint(blockchain_bp)
 app.register_blueprint(video_bp)
+app.register_blueprint(voice_sentinel_bp)
 
 # Initialize demo blockchain data for judges showcase
 initialize_demo_data()
@@ -48,7 +55,45 @@ detector = None
 camera_initialized = False
 
 # ⚙️ CONFIGURATION: Choose which video file to use
-VIDEO_FILE = "test4.mp4"  # ← CHANGE THIS TO SWITCH BETWEEN TEST FILES
+VIDEO_FILE = "test6.mp4"  # ← CHANGE THIS TO SWITCH BETWEEN TEST FILES
+ALLOW_WEBCAM_FALLBACK = False
+
+
+def _empty_analytics_payload(reason="Detector not initialized"):
+    """Return a stable analytics payload so frontend polling does not fail."""
+    return {
+        "stats": {
+            "total_detections": 0,
+            "current_people_count": 0,
+            "entry_count": 0,
+            "exit_count": 0,
+            "crowd_alerts": 0,
+            "inactivity_alerts": 0,
+        },
+        "current_objects": 0,
+        "zones": {},
+        "recent_alerts": [],
+        "timestamp": datetime.now().isoformat(),
+        "system_status": "inactive",
+        "message": reason,
+    }
+
+
+def _resolve_video_file():
+    """Resolve a usable local video file path (relative to this app file)."""
+    base_dir = os.path.dirname(os.path.abspath(__file__))
+    candidates = [VIDEO_FILE, "test5.mp4", "test4.mp4", "test3.mp4", "test1.mp4", "test.mp4"]
+
+    seen = set()
+    for candidate in candidates:
+        if not candidate or candidate in seen:
+            continue
+        seen.add(candidate)
+
+        path = candidate if os.path.isabs(candidate) else os.path.join(base_dir, candidate)
+        if os.path.exists(path):
+            return path
+    return None
 
 def initialize_camera():
     """Initialize camera and enhanced detector"""
@@ -56,15 +101,33 @@ def initialize_camera():
     
     if not camera_initialized:
         try:
-            video_file = VIDEO_FILE  # Use the configuration variable
-            cap = cv2.VideoCapture(video_file)
-            # if not cap.isOpened():
-            #     for i in range(1, 5):
-            #         cap = cv2.VideoCapture(i)
-            #         if cap.isOpened():
-            #             break
+            video_file = _resolve_video_file()
+
+            # Prefer configured/local test file; webcam fallback is optional.
+            sources = []
+            if video_file:
+                sources.append(video_file)
+            else:
+                logger.warning(f"No local video file found for VIDEO_FILE={VIDEO_FILE}")
+
+            if ALLOW_WEBCAM_FALLBACK:
+                sources.extend([0, 1, 2, 3])
+
+            if not sources:
+                logger.error("No video source available. Add a test .mp4 or enable ALLOW_WEBCAM_FALLBACK.")
+                return
+
+            cap = None
+            selected_source = None
+            for source in sources:
+                candidate = cv2.VideoCapture(source)
+                if candidate.isOpened():
+                    cap = candidate
+                    selected_source = source
+                    break
+                candidate.release()
             
-            if cap.isOpened():
+            if cap and cap.isOpened():
                 cap.set(cv2.CAP_PROP_FRAME_WIDTH, 1280)
                 cap.set(cv2.CAP_PROP_FRAME_HEIGHT, 720)
                 cap.set(cv2.CAP_PROP_FPS, 30)
@@ -72,18 +135,18 @@ def initialize_camera():
                 detector = Enhanced2A2SDetector(cap)
                 
                 # ✅ Enable loitering detection ONLY for test5.mp4
-                if "test5" in video_file.lower():
+                if isinstance(selected_source, str) and "test5" in os.path.basename(selected_source).lower():
                     detector.loitering_detection_enabled = True
                     logger.info("✅ Loitering detection ENABLED (test5.mp4 detected)")
                 else:
                     detector.loitering_detection_enabled = False
-                    logger.info(f"❌ Loitering detection DISABLED (using {video_file})")
+                    logger.info(f"❌ Loitering detection DISABLED (using {selected_source})")
                 
                 detector.start_detection()
                 camera_initialized = True
-                logger.info(f"SecureVista Camera initialized successfully with {video_file}")
+                logger.info(f"SecureVista Camera initialized successfully with source: {selected_source}")
             else:
-                logger.error(f"Failed to open camera/video file: {video_file}")
+                logger.error("Failed to open any camera/video source")
                 
         except Exception as e:
             logger.error(f"Error initializing camera: {e}")
@@ -798,7 +861,11 @@ def index():
                 .then(response => response.json())
                 .then(data => {
                     console.log(data.message);
-                    document.getElementById('videoOverlay').textContent = 'System Active';
+                    if (data.started) {
+                        document.getElementById('videoOverlay').textContent = 'System Active';
+                    } else {
+                        document.getElementById('videoOverlay').textContent = data.message || 'Camera Error';
+                    }
                 })
                 .catch(error => {
                     console.error('Error:', error);
@@ -812,7 +879,12 @@ def index():
         
         function updateStats() {
             fetch('/analytics')
-                .then(response => response.json())
+                .then(response => {
+                    if (!response.ok) {
+                        throw new Error('Analytics request failed with status ' + response.status);
+                    }
+                    return response.json();
+                })
                 .then(data => {
                     if (data.stats) {
                         const stats = data.stats;
@@ -1021,10 +1093,12 @@ def video_feed():
 def start_camera():
     try:
         initialize_camera()
-        return jsonify({"message": "SecureVista Camera started successfully" if camera_initialized else "Failed to start camera"})
+        if camera_initialized:
+            return jsonify({"started": True, "message": "SecureVista Camera started successfully"})
+        return jsonify({"started": False, "message": "Failed to start camera. Check video source or camera permissions."})
     except Exception as e:
         logger.error(f"Error starting camera: {e}")
-        return jsonify({"message": f"Error starting camera: {str(e)}"}), 500
+        return jsonify({"started": False, "message": f"Error starting camera: {str(e)}"}), 500
 
 @app.route('/update_parameters', methods=['POST'])
 def update_parameters():
@@ -1045,10 +1119,15 @@ def get_analytics():
     try:
         if detector:
             return jsonify(detector.get_analytics_data())
-        return jsonify({"error": "Detector not initialized"}), 400
+        return jsonify(_empty_analytics_payload())
     except Exception as e:
         logger.error(f"Error getting analytics: {e}")
-        return jsonify({"error": str(e)}), 500
+        return jsonify(_empty_analytics_payload(reason=str(e))), 500
+
+
+@app.route('/favicon.ico')
+def favicon():
+    return ('', 204)
 
 @app.route('/trigger_alert', methods=['POST'])
 def trigger_alert():
@@ -1456,12 +1535,12 @@ if __name__ == '__main__':
     print("  ✅ Real-time Email & Alert System")
     print("  ✅ Comprehensive Web Dashboard")
     print("=" * 60)
-    print("🌐 Access the system at: http://localhost:5001")
-    print("📊 Analytics Dashboard: http://localhost:5001/analytics_dashboard")
+    print("🌐 Access the system at: http://localhost:5002")
+    print("📊 Analytics Dashboard: http://localhost:5002/analytics_dashboard")
     print("=" * 60)
     
     try:
-        app.run(debug=False, host='0.0.0.0', port=5001, threaded=True)
+        app.run(debug=False, host='0.0.0.0', port=5002, threaded=True)
     except KeyboardInterrupt:
         print("\n🛑 Shutting down SecureVista System...")
         if detector:

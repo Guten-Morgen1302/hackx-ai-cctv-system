@@ -1,0 +1,62 @@
+@import "tailwindcss";
+
+@theme {
+  --color-hacker-black: #050509;
+  --color-hacker-deep: #050816;
+  --color-hacker-red: #ff2040;
+  --color-neon-green: #39ff14;
+  --color-neon-cyan: #00f6ff;
+  
+  --font-mono: "JetBrains Mono", "Fira Code", monospace;
+}
+
+@layer base {
+  body {
+    @apply bg-hacker-black text-gray-300 overflow-hidden font-mono;
+    margin: 0;
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+  }
+}
+
+@layer components {
+  .hacker-panel {
+    @apply bg-hacker-deep/80 border border-white/10 backdrop-blur-md;
+  }
+  
+  .neon-border-red {
+    @apply border-hacker-red shadow-[0_0_10px_rgba(255,32,64,0.3)];
+  }
+  
+  .neon-border-green {
+    @apply border-neon-green shadow-[0_0_10px_rgba(57,255,20,0.3)];
+  }
+  
+  .neon-text-red {
+    @apply text-hacker-red drop-shadow-[0_0_5px_rgba(255,32,64,0.5)];
+  }
+  
+  .neon-text-green {
+    @apply text-neon-green drop-shadow-[0_0_5px_rgba(57,255,20,0.5)];
+  }
+  
+  .neon-text-cyan {
+    @apply text-neon-cyan drop-shadow-[0_0_5px_rgba(0,246,255,0.5)];
+  }
+}
+
+::-webkit-scrollbar {
+  width: 4px;
+}
+
+::-webkit-scrollbar-track {
+  @apply bg-transparent;
+}
+
+::-webkit-scrollbar-thumb {
+  @apply bg-white/20 rounded-full;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  @apply bg-white/40;
+}

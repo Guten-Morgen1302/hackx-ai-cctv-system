@@ -1,0 +1,130 @@
+[
+  {
+    "index": 0,
+    "timestamp": "2026-04-24T10:54:25.776488",
+    "event_data": {
+      "camera_id": "CAM_RESTRICTED_HALLWAY",
+      "event_type": "loitering_detected",
+      "person_id": "P002",
+      "zone": "restricted_hallway",
+      "severity": "CRITICAL",
+      "description": "Unauthorized person loitering in restricted area for 28 seconds",
+      "image_hash": "d532993011be6394",
+      "timestamp": "2026-04-24T10:09:25.776467"
+    },
+    "prev_hash": "0",
+    "hash": "bc9b5e31dbd07ea0e530c9b76fa825b8d4cfcf8604bd374c08abdf01f3aaac11"
+  },
+  {
+    "index": 1,
+    "timestamp": "2026-04-24T10:54:25.776721",
+    "event_data": {
+      "camera_id": "CAM_SERVER_ROOM",
+      "event_type": "unauthorized_zone_entry",
+      "person_id": "P005",
+      "zone": "server_room",
+      "severity": "CRITICAL",
+      "description": "Unauthorized entry detected in server room - access denied",
+      "image_hash": "ee37e3fdb5dacc8a",
+      "timestamp": "2026-04-24T10:14:25.776467"
+    },
+    "prev_hash": "bc9b5e31dbd07ea0e530c9b76fa825b8d4cfcf8604bd374c08abdf01f3aaac11",
+    "hash": "3e02fcfa35ec0dc724e83673044c2c61b57cf480511c18091d70174e36f26902"
+  },
+  {
+    "index": 2,
+    "timestamp": "2026-04-24T10:54:25.777020",
+    "event_data": {
+      "camera_id": "CAM_MAIN_LOBBY",
+      "event_type": "aggressive_posture",
+      "person_id": "P002",
+      "zone": "main_lobby",
+      "severity": "HIGH",
+      "description": "Aggressive posture detected - potential threat",
+      "image_hash": "c7c0a11e173ac82f",
+      "timestamp": "2026-04-24T10:19:25.776467"
+    },
+    "prev_hash": "3e02fcfa35ec0dc724e83673044c2c61b57cf480511c18091d70174e36f26902",
+    "hash": "3943945736dad294efc4aad035f92622aab7e09d13e9cf336ba30ae290a36487"
+  },
+  {
+    "index": 3,
+    "timestamp": "2026-04-24T10:54:25.777281",
+    "event_data": {
+      "camera_id": "CAM_ENTRANCE",
+      "event_type": "crowd_gathering",
+      "person_id": "P004",
+      "zone": "entrance",
+      "severity": "HIGH",
+      "description": "Unusual crowd gathering at main entrance - 12 persons detected",
+      "image_hash": "46002798dd0a2995",
+      "timestamp": "2026-04-24T10:24:25.776467"
+    },
+    "prev_hash": "3943945736dad294efc4aad035f92622aab7e09d13e9cf336ba30ae290a36487",
+    "hash": "a419a775d6012d7a1fc2afcc7add27c06834af8a8ccee4aa6a8ece10a83b8607"
+  },
+  {
+    "index": 4,
+    "timestamp": "2026-04-24T10:54:25.777566",
+    "event_data": {
+      "camera_id": "CAM_SECURITY_OFFICE",
+      "event_type": "motion_detected",
+      "person_id": "P001",
+      "zone": "security_office",
+      "severity": "MEDIUM",
+      "description": "Motion detected after hours - verified by staff",
+      "image_hash": "0689de0ef44822e8",
+      "timestamp": "2026-04-24T10:34:25.776467"
+    },
+    "prev_hash": "a419a775d6012d7a1fc2afcc7add27c06834af8a8ccee4aa6a8ece10a83b8607",
+    "hash": "ce15d501cb2bf4137be19ad53a05b7d762618ded69162305717fafe43a9c44c6"
+  },
+  {
+    "index": 5,
+    "timestamp": "2026-04-24T10:54:25.777845",
+    "event_data": {
+      "camera_id": "CAM_HALLWAY_TO_ADMIN",
+      "event_type": "zone_crossing",
+      "person_id": "P003",
+      "zone": "hallway_to_admin",
+      "severity": "MEDIUM",
+      "description": "Authorized staff crossing between zones",
+      "image_hash": "105c6355f644cc09",
+      "timestamp": "2026-04-24T10:39:25.776467"
+    },
+    "prev_hash": "ce15d501cb2bf4137be19ad53a05b7d762618ded69162305717fafe43a9c44c6",
+    "hash": "57148d23782cee7d451cf4b19296aca44425b9e097e495855a205941d7985d15"
+  },
+  {
+    "index": 6,
+    "timestamp": "2026-04-24T10:54:25.778233",
+    "event_data": {
+      "camera_id": "CAM_PARKING_LEVEL_2",
+      "event_type": "suspicious_behavior",
+      "person_id": "P004",
+      "zone": "parking_level_2",
+      "severity": "HIGH",
+      "description": "Suspicious behavior - loitering near vehicles",
+      "image_hash": "0ac0c22f33bb2ad0",
+      "timestamp": "2026-04-24T10:44:25.776467"
+    },
+    "prev_hash": "57148d23782cee7d451cf4b19296aca44425b9e097e495855a205941d7985d15",
+    "hash": "dbaa3c1ed93673ea073cfb5cb03e2ee2459e5ffdf9fc734c59b5b0474025107d"
+  },
+  {
+    "index": 7,
+    "timestamp": "2026-04-24T10:54:25.778602",
+    "event_data": {
+      "camera_id": "CAM_FRONT_ENTRANCE",
+      "event_type": "motion_detected",
+      "person_id": "P001",
+      "zone": "front_entrance",
+      "severity": "LOW",
+      "description": "Normal motion - authorized personnel",
+      "image_hash": "1c4a7d3f5c74bd7d",
+      "timestamp": "2026-04-24T10:49:25.776467"
+    },
+    "prev_hash": "dbaa3c1ed93673ea073cfb5cb03e2ee2459e5ffdf9fc734c59b5b0474025107d",
+    "hash": "88e67bbfeb17939e75d7c61c00eb209b8e5dbe1a342a83d013ef10c0920b5cb6"
+  }
+]

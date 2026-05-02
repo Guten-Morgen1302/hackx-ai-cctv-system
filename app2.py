@@ -7,7 +7,13 @@ import json
 from datetime import datetime, timedelta
 import os
 import numpy as np
+from dotenv import load_dotenv
+
+# Load environment variables early
+load_dotenv()
+
 from survilleance.Detector import Detector_2A2S  # Import the enhanced detector
+from modules.voice_call_handler import handle_alert_with_voice
 
 # Mock classes for demonstration (replace with your actual imports)
 class MockEmailAlert:
@@ -30,13 +36,24 @@ def initialize_camera():
     
     if not camera_initialized:
         try:
-            cap = cv2.VideoCapture(0)  # Try default camera
-            if not cap.isOpened():
-                # Try other camera indices
-                for i in range(1, 5):
-                    cap = cv2.VideoCapture(i)
-                    if cap.isOpened():
+            # Try a few capture backends and indices to avoid backend-specific grab failures on Windows
+            backends = [cv2.CAP_DSHOW, cv2.CAP_MSMF, cv2.CAP_VFW]
+            opened = False
+            for backend in backends:
+                for i in range(0, 4):
+                    try:
+                        cap = cv2.VideoCapture(i, backend)
+                    except Exception:
+                        cap = cv2.VideoCapture(i)
+                    if cap is not None and cap.isOpened():
+                        opened = True
+                        print(f"Opened camera index {i} with backend {backend}")
                         break
+                if opened:
+                    break
+            if not opened:
+                # Fallback: try default without specifying backend
+                cap = cv2.VideoCapture(0)
             
             if cap.isOpened():
                 # Set camera properties for better performance
@@ -314,10 +331,27 @@ def test_whatsapp_alert():
                 'timestamp': datetime.now().isoformat()
             }
             
-            detector.send_whatsapp_alert('abandoned_object', test_data)
-            
+            # Use the unified handler to preserve WhatsApp behavior and schedule voice call
+            def save_to_db_fn(ev):
+                # Use analytics logger as a lightweight DB save
+                detector.log_analytics_event('manual_test_incidents', ev)
+
+            handle_alert_with_voice(
+                event={
+                    'incident_id': f"TEST-ABANDONED-{int(time.time())}",
+                    'event_type': 'ABANDONED_OBJECT',
+                    'risk_tier': 'HIGH',
+                    'zone_name': 'Test Camera',
+                    'short_reason': 'Manual test of abandoned object alert',
+                    'data': test_data
+                },
+                save_to_db_fn=save_to_db_fn,
+                send_whatsapp_fn=lambda ev: detector.send_whatsapp_alert('abandoned_object', ev.get('data', {})),
+                push_to_dashboard_fn=None,
+            )
+
             return jsonify({
-                "message": "Test WhatsApp alert sent successfully",
+                "message": "Test WhatsApp + voice alert scheduled successfully",
                 "phone_number": detector.whatsapp_number,
                 "timestamp": datetime.now().isoformat()
             })

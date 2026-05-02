@@ -41,7 +41,7 @@ const Index = () => {
           <SecurityCard
             title="Entry Exit System"
             backgroundImage={entryExitHero}
-            onClick={() => window.location.href = 'http://localhost:5001'}
+            onClick={() => window.location.href = 'http://localhost:5002'}
           />
         </div>
 

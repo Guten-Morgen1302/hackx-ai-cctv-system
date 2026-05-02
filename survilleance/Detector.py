@@ -15,6 +15,13 @@ import pywhatkit as pwk
 import time
 from threading import Lock, Thread
 import datetime as dt
+
+# Voice calling integration
+try:
+    from modules.voice_call_handler import schedule_voice_call_in_15_seconds
+    VOICE_CALLING_AVAILABLE = True
+except ImportError:
+    VOICE_CALLING_AVAILABLE = False
 class Detector_2A2S:
     
     def __init__(self, cap):
@@ -81,6 +88,10 @@ class Detector_2A2S:
         self.loitering_detection_enabled = False
         self.suspicious_object_detection_enabled = False
         self.fall_detection_enabled = False
+        # Camera health tracking
+        self.camera_failures = 0
+        self.camera_error = False
+        self._last_camera_error_log = 0
         
         # Shadow detection parameters
         self.shadow_threshold = 50
@@ -169,7 +180,8 @@ class Detector_2A2S:
         self.whatsapp_number = "+918169803818"  # Target WhatsApp number
         self.whatsapp_lock = Lock()  # Thread safety for WhatsApp sending
         self.last_whatsapp_alert = {}  # Track last alert times to prevent spam
-        self.whatsapp_cooldown = 30  # 5 minutes cooldown between same alert types
+        self.pending_whatsapp_alerts = set()  # Track in-flight WhatsApp alerts to prevent duplicate scheduling
+        self.whatsapp_cooldown = 120  # 2 minutes cooldown between same alert types (prevent spam)
 
         # WhatsApp alert triggers - ONLY for specified conditions
         self.whatsapp_triggers = {
@@ -256,6 +268,20 @@ class Detector_2A2S:
         if not self.whatsapp_triggers.get(alert_type, False):
             print(f"[⚠️ WhatsApp trigger disabled for {alert_type}]")
             return
+
+        # Prevent duplicate scheduling while an alert is already in-flight
+        with self.whatsapp_lock:
+            current_time = datetime.now()
+            last_alert_key = f"{alert_type}_whatsapp"
+            if alert_type in self.pending_whatsapp_alerts:
+                print(f"[⏳ WhatsApp pending for {alert_type}: duplicate skipped]")
+                return
+            if last_alert_key in self.last_whatsapp_alert:
+                time_diff = (current_time - self.last_whatsapp_alert[last_alert_key]).total_seconds()
+                if time_diff < self.whatsapp_cooldown:
+                    print(f"[⏱️ {alert_type} cooldown: Next in {self.whatsapp_cooldown - time_diff:.0f}s]")
+                    return
+            self.pending_whatsapp_alerts.add(alert_type)
         
         # Run in background thread to not block detection
         Thread(target=self._send_whatsapp_async, args=(alert_type, alert_data)).start()
@@ -265,16 +291,8 @@ class Detector_2A2S:
         try:
             with self.whatsapp_lock:  # Thread safety
                 current_time = datetime.now()
-                
-                # Cooldown check to prevent spam
                 last_alert_key = f"{alert_type}_whatsapp"
-                if last_alert_key in self.last_whatsapp_alert:
-                    time_diff = (current_time - self.last_whatsapp_alert[last_alert_key]).total_seconds()
-                    if time_diff < self.whatsapp_cooldown:
-                        print(f"[⏱️ {alert_type} cooldown: Next in {self.whatsapp_cooldown - time_diff:.0f}s]")
-                        return
-                
-                # Update last alert time
+                # Update last alert time immediately so repeated detections cannot queue duplicates
                 self.last_whatsapp_alert[last_alert_key] = current_time
                 
                 # Create robust alert message based on type
@@ -307,7 +325,7 @@ class Detector_2A2S:
                         time_hour=hour,
                         time_min=minute,
                         wait_time=10,
-                        tab_close=True,
+                        tab_close=False,  # Keep browser open
                         close_time=1
                     )
                     
@@ -335,6 +353,35 @@ class Detector_2A2S:
                     
         except Exception as e:
             print(f"❌ [WhatsApp exception: {str(e)[:60]}]\n")
+        finally:
+            with self.whatsapp_lock:
+                self.pending_whatsapp_alerts.discard(alert_type)
+
+        # After scheduling WhatsApp, also schedule a voice call for certain alert types
+        try:
+            from modules.voice_call_handler import schedule_voice_call_in_15_seconds, GUARD_PHONE
+
+            # Map the alert_type used in WhatsApp to event_type used by voice handler
+            mapping = {
+                'shadow_detection': 'SHADOW_DETECTED',
+                'abandoned_object': 'ABANDONED_OBJECT',
+                'fall_detection': 'FALL_DETECTED'
+            }
+
+            if alert_type in mapping and VOICE_CALLING_AVAILABLE and self.isSendingAlerts:
+                voice_event = {
+                    'incident_id': f"{mapping[alert_type]}-{int(datetime.now().timestamp())}",
+                    'event_type': mapping[alert_type],
+                    'risk_tier': 'HIGH',
+                    'zone_name': 'Security Camera System',
+                    'short_reason': f'{mapping[alert_type].replace("_", " ")} detected via WhatsApp trigger',
+                }
+                guard_phone = os.getenv('GUARD_PHONE', GUARD_PHONE)
+                print(f"📞 [VOICE] Scheduling voice call for {voice_event['event_type']} to {guard_phone} in 15 seconds...")
+                schedule_voice_call_in_15_seconds(voice_event, guard_phone)
+        except Exception:
+            # Non-fatal: if voice handler isn't available or scheduling fails, continue
+            pass
 
     def _create_whatsapp_message(self, alert_type, alert_data, timestamp):
         """
@@ -507,6 +554,27 @@ Data: {str(alert_data)[:100]}...
                 if shadow_pixels > 1000:  # Only for significant shadows
                     print(f"🌒 [SHADOW DETECTED] Sending WhatsApp alert immediately...")
                     self.send_whatsapp_alert('shadow_detection', shadow_event)
+                    
+                    # VOICE CALLING: Schedule voice call for shadow detection
+                    if VOICE_CALLING_AVAILABLE and self.isSendingAlerts:
+                        try:
+                            # Create voice event from shadow data
+                            import os
+                            guard_phone = os.getenv('GUARD_PHONE', '+91XXXXXXXXXX')
+                            
+                            voice_event = {
+                                'incident_id': f"SHADOW-{int(datetime.now().timestamp())}",
+                                'event_type': 'SHADOW_DETECTED',
+                                'risk_tier': 'HIGH',  # Shadow detection is HIGH priority
+                                'zone_name': 'Security Camera System',
+                                'short_reason': f'Suspicious shadow movement detected - {shadow_pixels} pixels affected',
+                                'recommended_actions': ['Monitor area closely', 'Check for unauthorized movement']
+                            }
+                            
+                            print(f"📞 [SHADOW] Scheduling voice call in 15 seconds...")
+                            schedule_voice_call_in_15_seconds(voice_event, guard_phone)
+                        except Exception as voice_error:
+                            print(f"⚠️ [VOICE ERROR] {str(voice_error)[:60]}")
             return shadow_mask.astype(np.uint8) * 255, light_change_detected
             
         except Exception as e:
@@ -592,6 +660,24 @@ Data: {str(alert_data)[:100]}...
                 # Send WhatsApp alert IMMEDIATELY for abandoned objects
                 print(f"📦 [ABANDONED OBJECT DETECTED] Sending WhatsApp alert immediately...")
                 self.send_whatsapp_alert('abandoned_object', alert)
+                
+                # VOICE CALLING: Schedule voice call for abandoned object detection
+                if VOICE_CALLING_AVAILABLE and self.isSendingAlerts:
+                    try:
+                        import os
+                        from modules.voice_call_handler import schedule_voice_call_in_15_seconds
+                        guard_phone = os.getenv('GUARD_PHONE', '+91XXXXXXXXXX')
+                        voice_event = {
+                            'incident_id': f"ABANDONED-{int(datetime.now().timestamp())}",
+                            'event_type': 'ABANDONED_OBJECT',
+                            'risk_tier': 'HIGH',
+                            'zone_name': 'Security Camera System',
+                            'short_reason': f'Abandoned object detected - {alert.get("object_type", "unknown")}',
+                        }
+                        print(f"📞 [VOICE] Scheduling voice call for ABANDONED_OBJECT to {guard_phone} in 15 seconds...")
+                        schedule_voice_call_in_15_seconds(voice_event, guard_phone)
+                    except Exception as voice_err:
+                        pass  # Non-fatal: voice scheduling optional
                     
         except Exception as e:
             print(f"Error in abandoned object detection: {e}")
@@ -869,6 +955,24 @@ Data: {str(alert_data)[:100]}...
                 # Send WhatsApp alert IMMEDIATELY for fall detection (highest priority)
                 print(f"🚨 [FALL DETECTED] Sending WhatsApp alert immediately...")
                 self.send_whatsapp_alert('fall_detection', alert)
+                
+                # VOICE CALLING: Schedule voice call for fall detection
+                if VOICE_CALLING_AVAILABLE and self.isSendingAlerts:
+                    try:
+                        import os
+                        from modules.voice_call_handler import schedule_voice_call_in_15_seconds
+                        guard_phone = os.getenv('GUARD_PHONE', '+91XXXXXXXXXX')
+                        voice_event = {
+                            'incident_id': f"FALL-{int(datetime.now().timestamp())}",
+                            'event_type': 'FALL_DETECTED',
+                            'risk_tier': 'CRITICAL',
+                            'zone_name': 'Security Camera System',
+                            'short_reason': 'Person detected on ground - possible fall emergency',
+                        }
+                        print(f"📞 [VOICE] Scheduling voice call for FALL_DETECTED to {guard_phone} in 15 seconds...")
+                        schedule_voice_call_in_15_seconds(voice_event, guard_phone)
+                    except Exception as voice_err:
+                        pass  # Non-fatal: voice scheduling optional
                     
         except Exception as e:
             print(f"Error in fall detection: {e}")
@@ -1061,13 +1165,34 @@ Data: {str(alert_data)[:100]}...
                 # Capture frame
                 ret, frame = self.cap.read()
                 if not ret:
-                    print("[!] Failed to read frame from camera")
+                    # Increment failure counter and show error frame
+                    self.camera_failures += 1
+                    now = time.time()
+                    # Log first failure and then at most every 5 seconds to avoid spam
+                    if self.camera_failures == 1 or (now - self._last_camera_error_log) > 5:
+                        print("[!] Failed to read frame from camera")
+                        self._last_camera_error_log = now
+
+                    # After repeated failures, set camera_error flag and back off
+                    if self.camera_failures >= 10:
+                        if not self.camera_error:
+                            print("[ERROR] Camera failed repeatedly — entering error backoff mode")
+                        self.camera_error = True
+                        time.sleep(0.5)
+
+                    # Create error frame to display on dashboard
                     frame = np.zeros((480, 640, 3), dtype=np.uint8)
-                    cv2.putText(frame, "Camera Error", (200, 240), 
-                              cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 0, 255), 2)
+                    cv2.putText(frame, "Camera Error", (200, 240),
+                                cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 0, 255), 2)
                     with self._frame_lock:
                         self.export_frame = frame
                     continue
+
+                # Reset camera failure / error state on successful read
+                if self.camera_failures:
+                    self.camera_failures = 0
+                if self.camera_error:
+                    self.camera_error = False
 
                 # Resize frame for consistent processing
                 frame = cv2.resize(frame, (640, 480))

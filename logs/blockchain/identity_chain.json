@@ -1,0 +1,66 @@
+[
+  {
+    "person_id": "P001",
+    "name": "John Smith",
+    "role": "Security Staff",
+    "department": "Security",
+    "face_encoding_hash": "d89ee6e87bc6ba3b86da3c95d3770320c41980b2663ab1376e73f09a119ccf72",
+    "access_zones": [
+      "entry",
+      "exit",
+      "corridor"
+    ],
+    "enrollment_timestamp": "2026-04-24T10:54:25.772618",
+    "prev_hash": "0",
+    "hash": "33677fa5a0722faf6414e27e7028dd85a5daa8febed2eea0f557775d2e437d0f"
+  },
+  {
+    "person_id": "P002",
+    "name": "Unknown Suspect",
+    "role": "Unverified",
+    "department": "Unknown",
+    "face_encoding_hash": "489d93c2dfafca2da21976044b9b6591a1534f44b3beda1fc6ff78a242a9f3a9",
+    "access_zones": [],
+    "enrollment_timestamp": "2026-04-24T10:54:25.773178",
+    "prev_hash": "33677fa5a0722faf6414e27e7028dd85a5daa8febed2eea0f557775d2e437d0f",
+    "hash": "4b637350e205f04b544e01958065c666343d105b990bd818f6779486e7643ce5"
+  },
+  {
+    "person_id": "P003",
+    "name": "Sarah Johnson",
+    "role": "Staff",
+    "department": "Admin",
+    "face_encoding_hash": "f787e09beb7ddd91d7bd5aa4d81b6225efc3727c1c52c41125737a76e98e4cf9",
+    "access_zones": [
+      "admin",
+      "hallway"
+    ],
+    "enrollment_timestamp": "2026-04-24T10:54:25.773499",
+    "prev_hash": "4b637350e205f04b544e01958065c666343d105b990bd818f6779486e7643ce5",
+    "hash": "0c25671b60fbcff8606390cdc372f59cdc16bc060f1faacc218e37a36857d398"
+  },
+  {
+    "person_id": "P004",
+    "name": "Mike Chen",
+    "role": "Visitor",
+    "department": "Vendor",
+    "face_encoding_hash": "5b79ebcea11507ffa932312a4433207bec5e1fa2c2e437c01799be6e31a86841",
+    "access_zones": [
+      "lobby"
+    ],
+    "enrollment_timestamp": "2026-04-24T10:54:25.775853",
+    "prev_hash": "0c25671b60fbcff8606390cdc372f59cdc16bc060f1faacc218e37a36857d398",
+    "hash": "f4959cc452f33aee5f74ac6d6dd4af186fef965a662161fb8863fe5c6c81de0b"
+  },
+  {
+    "person_id": "P005",
+    "name": "Unauthorized Person",
+    "role": "Threat",
+    "department": "Unknown",
+    "face_encoding_hash": "c5903d213f01a4ff10bc3debf3b4990654308d4e6c2a41d3208b5aaf7f8e21af",
+    "access_zones": [],
+    "enrollment_timestamp": "2026-04-24T10:54:25.776142",
+    "prev_hash": "f4959cc452f33aee5f74ac6d6dd4af186fef965a662161fb8863fe5c6c81de0b",
+    "hash": "a04ea9d816aa06d74a6969ed243df20e17b7d8fd11a62cea806af3f934f70dbe"
+  }
+]

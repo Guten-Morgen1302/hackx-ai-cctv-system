@@ -59,7 +59,7 @@ export const BlockchainDashboard: React.FC = () => {
 
   const fetchAvailableVideos = async () => {
     try {
-      const response = await fetch('http://localhost:5001/api/videos/available');
+      const response = await fetch('http://localhost:5002/api/videos/available');
       const data = await response.json();
       if (data.success) {
         setVideos(data.available_videos);
@@ -73,7 +73,7 @@ export const BlockchainDashboard: React.FC = () => {
   const switchVideo = async (videoName: string) => {
     try {
       setLoading(true);
-      const response = await fetch(`http://localhost:5001/api/videos/switch/${videoName}`, {
+      const response = await fetch(`http://localhost:5002/api/videos/switch/${videoName}`, {
         method: 'POST'
       });
       const data = await response.json();
@@ -96,7 +96,7 @@ export const BlockchainDashboard: React.FC = () => {
 
   const fetchVideoAnalytics = async (videoName: string) => {
     try {
-      const response = await fetch(`http://localhost:5001/api/videos/analytics/${videoName}`);
+      const response = await fetch(`http://localhost:5002/api/videos/analytics/${videoName}`);
       const data = await response.json();
       if (data.success) {
         setVideoAnalytics(data.analytics);
@@ -108,7 +108,7 @@ export const BlockchainDashboard: React.FC = () => {
 
   const fetchEvidenceChain = async () => {
     try {
-      const response = await fetch('http://localhost:5001/api/chain');
+      const response = await fetch('http://localhost:5002/api/chain');
       const data = await response.json();
       if (data.success) {
         setEvidenceChain(data.chain);
@@ -120,7 +120,7 @@ export const BlockchainDashboard: React.FC = () => {
 
   const fetchIdentities = async () => {
     try {
-      const response = await fetch('http://localhost:5001/api/identity');
+      const response = await fetch('http://localhost:5002/api/identity');
       const data = await response.json();
       if (data.success) {
         setIdentities(data.identities);
@@ -132,7 +132,7 @@ export const BlockchainDashboard: React.FC = () => {
 
   const fetchRiskScores = async () => {
     try {
-      const response = await fetch('http://localhost:5001/api/risk/scores');
+      const response = await fetch('http://localhost:5002/api/risk/scores');
       const data = await response.json();
       if (data.success) {
         setRiskScores(data.scores);
@@ -144,7 +144,7 @@ export const BlockchainDashboard: React.FC = () => {
 
   const fetchChainHealth = async () => {
     try {
-      const response = await fetch('http://localhost:5001/api/chain/verify');
+      const response = await fetch('http://localhost:5002/api/chain/verify');
       const data = await response.json();
       if (data.success) {
         setChainHealth(data.chain_health);
